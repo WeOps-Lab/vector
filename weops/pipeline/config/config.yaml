@@ -1,0 +1,97 @@
+api:
+  enabled: true
+  address: 0.0.0.0:8686
+
+sources:
+  # 接收kafka数据
+  kafka_in:
+    type: kafka
+    bootstrap_servers: "127.0.0.1:9092"
+    group_id: "vector"
+    topics:
+      - ^0bkmonitor_.*
+
+transforms:
+  # 转换kafka数据
+  parse_kafka:
+    type: remap
+    inputs:
+      - kafka_in
+    source: |-
+      .all_data = parse_json!(.message)
+      if exists(.all_data.type) && exists(.all_data.service.type){
+        if (.all_data.type == "metricbeat") && (.all_data.service.type == "prometheus"){
+          .metrics = .all_data.prometheus.collector.metrics
+          .bk_data.bk_biz_id = to_string!(.all_data.bk_biz_id)
+          .bk_data.bk_cloud_id = to_string!(.all_data.bk_cloud_id)
+          .bk_data.bk_data_id = to_string!(.all_data.dataid)
+          .bk_group_info = .all_data.group_info
+        }
+      }
+
+
+  # 转换为vector prometheus exporter 指标格式
+  to_metric:
+    type: lua
+    inputs:
+      - parse_kafka
+    version: '2'
+    hooks:
+      process: |
+        function (event, emit)
+          -- 指标和维度
+          local metrics = event.log.metrics
+          local bk_data = event.log.bk_data
+          local group_info = event.log.bk_group_info or {}
+
+          -- 检查解析后的数据
+          if event.log.metrics == nil then
+            return
+          end
+          if event.log.bk_data == nil then
+            return
+          end
+
+          -- 推送事件
+          for _, m in ipairs(metrics) do
+            m.labels.bk_data_id = bk_data.bk_data_id
+            m.labels.bk_biz_id = bk_data.bk_biz_id
+            m.labels.bk_cloud_id = bk_data.bk_cloud_id
+
+            if group_info then
+              for _, g in ipairs(group_info) do
+                m.labels.bk_collect_config_id = g.bk_collect_config_id or ""
+                m.labels.bk_target_cloud_id = g.bk_target_cloud_id or ""
+                m.labels.bk_target_ip = g.bk_target_ip or ""
+                m.labels.bk_target_service_category_id = g.bk_target_service_category_id or ""
+                m.labels.bk_target_service_instance_id = g.bk_target_service_instance_id or ""
+                m.labels.bk_target_topo_id = g.bk_target_topo_id or ""
+                m.labels.bk_target_topo_level = g.bk_target_topo_level or ""
+              end
+            end
+
+            local new_event = {
+              metric = {
+                gauge = {
+                  value = m.value
+                },
+                name = m.key,
+                tags = m.labels
+              }
+            }
+            if m.labels.protocol == nil then
+              emit(new_event)
+            end
+          end
+        end
+
+sinks:
+  prometheus_remote_write:
+    type: prometheus_remote_write
+    inputs:
+      - to_metric
+    endpoint: "http://127.0.0.1:9090/api/v1/write"
+    auth:
+      strategy: "basic"
+      user: "admin"
+      password: "admin"
