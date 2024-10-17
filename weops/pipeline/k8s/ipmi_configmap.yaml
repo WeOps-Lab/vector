@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vector-config
+  namespace: vector
+data:
+  vector.yaml: |-
+    sources:
+      prometheus_receive_ipmi:
+        type: prometheus_remote_write
+        address: "0.0.0.0:9091"
+        auth:
+          strategy: "basic"
+          username: "admin"
+          password: "admin"
+    
+    transforms:
+      ipmi_remap:
+        type: remap
+        inputs: ["prometheus_receive_ipmi"]
+        source: |
+          if contains!(.name, "ipmi_sensor") {
+            if .tags.unit == "rpm" {
+              .name = "ipmi_fan_speed_rpm"
+            } else if .tags.unit == "watts" {
+              .name = "ipmi_power_watts"
+            } else if .tags.unit == "degrees_c" {
+              .name = "ipmi_temperature_celsius"
+            } else if .tags.unit == "volts" {
+              .name = "ipmi_voltage_volts"
+            } else if match_array([.tags.name], r'psu\d+_status') {
+              .name = "ipmi_chassis_power_state"
+            }
+          } 
+    
+    sinks:
+      prometheus_remote_write_ipmi:
+        type: prometheus_remote_write
+        inputs: ["ipmi_remap"]
+        endpoint: "http://10.10.26.237:9093/api/v1/write"
+        auth:
+          strategy: "basic"
+          user: "admin"
+          password: "admin"
+    
+    api:
+      enabled: true
