@@ -30,7 +30,7 @@ transforms:
           .name = "ipmi_temperature_celsius"
         } else if .tags.unit == "volts" {
           .name = "ipmi_voltage_volts"
-        } else if match_array([.tags.name], r'psu\d+_status') {
+        } else if match_array([.tags.name], r'(psu\d+_status|chassis_power_status)') {
           .name = "ipmi_chassis_power_state"
         }
         .tags.dimension = .tags.name
