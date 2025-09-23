@@ -21,7 +21,7 @@ transforms:
     type: remap
     inputs: ["prometheus_receive_ipmi"]
     source: |
-      if contains!(.name, "ipmi_sensor") {
+      if .name == "ipmi_sensor_value" {
         if .tags.unit == "rpm" {
           .name = "ipmi_fan_speed_rpm"
         } else if .tags.unit == "watts" {
@@ -30,11 +30,15 @@ transforms:
           .name = "ipmi_temperature_celsius"
         } else if .tags.unit == "volts" {
           .name = "ipmi_voltage_volts"
-        } else if match_array([.tags.name], r'(psu\d+_status|chassis_power_status)') {
-          .name = "ipmi_chassis_power_state"
         }
-        .tags.dimension = .tags.name
-      } 
+      }
+
+      if .name == "ipmi_sensor_status" {
+        if match_array([.tags.name], r'(psu\d+_status|chassis_power_status)') {
+            .name = "ipmi_chassis_power_state"
+        }
+      }
+      
 
   # 转换kafka数据
   parse_kafka:
