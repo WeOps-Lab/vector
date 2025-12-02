@@ -31,11 +31,13 @@ transforms:
         } else if .tags.unit == "volts" {
           .name = "ipmi_voltage_volts"
         }
+        .tags.dimension = .tags.name
       }
 
       if .name == "ipmi_sensor_status" {
         if match_array([.tags.name], r'(psu\d+_status|chassis_power_status)') {
             .name = "ipmi_chassis_power_state"
+            .tags.dimension = .tags.name
         }
       }
       
